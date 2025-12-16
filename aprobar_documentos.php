@@ -1,6 +1,7 @@
 <?php
 require_once 'verificar_login.php';
 require_once 'conexion.php';
+require_once 'email_functions.php';
 
 // Verificar que el usuario esté autenticado
 verificarLogin();
@@ -61,15 +62,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // Crear notificación para el responsable
                 if ($estado_anterior != $nuevo_estado) {
-                    $mensaje_notif = "El documento ha sido $nuevo_estado";
+                    $mensaje_notif = "El documento '$nombre_doc' ha sido $nuevo_estado";
                     if (!empty($comentario)) {
-                        $mensaje_notif .= " - $comentario";
+                        $mensaje_notif .= " - Comentario: $comentario";
                     }
-                    
-                    $sqlNotif = "INSERT INTO Notificaciones 
-                                (documento_id, tipo_evento, fecha_programada, enviado, mensaje)
-                                VALUES (?, 'Cambio Estado', GETDATE(), 0, ?)";
-                    sqlsrv_query($conn, $sqlNotif, array($documento_id, $mensaje_notif));
+
+                    // Obtener email del responsable del documento
+                    $sqlResponsable = "SELECT u.email FROM Usuarios u
+                                      INNER JOIN Documentos d ON u.id = d.responsable_id
+                                      WHERE d.id = ?";
+                    $stmtResp = sqlsrv_query($conn, $sqlResponsable, array($documento_id));
+                    $respData = sqlsrv_fetch_array($stmtResp, SQLSRV_FETCH_ASSOC);
+
+                    // Obtener emails de aprobadores y editores
+                    $emails_notificar = obtenerEmailsPorRol([1, 2, 4]); // Admin, Editor, Aprobador
+
+                    // Agregar email del responsable si existe
+                    if (!empty($respData['email'])) {
+                        $emails_notificar[] = $respData['email'];
+                    }
+
+                    $destinatarios = implode(',', array_unique($emails_notificar));
+
+                    // Usar la nueva función para crear notificación
+                    crearNotificacion($documento_id, 'Cambio Estado', $mensaje_notif, $destinatarios);
                 }
             } else {
                 $mensaje = 'Error al actualizar el documento';

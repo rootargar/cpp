@@ -2,6 +2,7 @@
 require_once 'verificar_login.php';
 require_once 'conexion.php';
 require_once 'config.php';
+require_once 'email_functions.php';
 
 // Verificar que el usuario esté autenticado
 verificarLogin();
@@ -119,9 +120,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['archivo'])) {
                 );
                 
                 // Crear notificación de nueva versión
-                $sqlNotif = "INSERT INTO Notificaciones (documento_id, tipo_evento, fecha_programada, enviado, mensaje)
-                            VALUES (?, 'Nueva Version', GETDATE(), 0, 'Se ha subido la versión $nuevaVersion')";
-                sqlsrv_query($conn, $sqlNotif, array($documento_id));
+                $mensaje_notif = "Se ha subido la versión $nuevaVersion del documento '{$documento['nombre']}'";
+                if (!empty($comentario)) {
+                    $mensaje_notif .= " - Comentario: $comentario";
+                }
+
+                // Obtener email del responsable del documento
+                $sqlResponsable = "SELECT u.email FROM Usuarios u
+                                  INNER JOIN Documentos d ON u.id = d.responsable_id
+                                  WHERE d.id = ?";
+                $stmtResp = sqlsrv_query($conn, $sqlResponsable, array($documento_id));
+                $respData = sqlsrv_fetch_array($stmtResp, SQLSRV_FETCH_ASSOC);
+
+                // Obtener emails de aprobadores y editores
+                $emails_notificar = obtenerEmailsPorRol([1, 2, 4]); // Admin, Editor, Aprobador
+
+                // Agregar email del responsable si existe
+                if (!empty($respData['email'])) {
+                    $emails_notificar[] = $respData['email'];
+                }
+
+                $destinatarios = implode(',', array_unique($emails_notificar));
+
+                // Usar la nueva función para crear notificación
+                crearNotificacion($documento_id, 'Nueva Version', $mensaje_notif, $destinatarios);
             } else {
                 // Si falla la inserción, eliminar el archivo
                 unlink($rutaDestino);
