@@ -89,6 +89,8 @@ function enviarEmailSMTP($to, $nombre_destinatario, $asunto, $mensaje_html) {
         $username = SMTP_USERNAME;
         $password = SMTP_PASSWORD;
 
+        registrarLogEmail("Iniciando conexión SMTP a $host:$port para enviar a $to");
+
         // Crear socket
         $socket = fsockopen($host, $port, $errno, $errstr, SMTP_TIMEOUT);
 
@@ -97,33 +99,61 @@ function enviarEmailSMTP($to, $nombre_destinatario, $asunto, $mensaje_html) {
             return false;
         }
 
-        // Leer respuesta del servidor
+        // Leer respuesta del servidor (debe ser 220)
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("Respuesta inicial: " . trim($respuesta));
+
+        if (substr($respuesta, 0, 3) != '220') {
+            registrarLogEmail("Error: Respuesta inicial no es 220");
+            fclose($socket);
+            return false;
+        }
 
         // EHLO
         fputs($socket, "EHLO " . $_SERVER['SERVER_NAME'] . "\r\n");
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("EHLO respuesta: " . trim($respuesta));
+
+        // Leer líneas adicionales del EHLO
+        while ($respuesta && substr($respuesta, 3, 1) == '-') {
+            $respuesta = fgets($socket, 515);
+        }
 
         // STARTTLS si está configurado
         if (SMTP_SECURE == 'tls') {
             fputs($socket, "STARTTLS\r\n");
             $respuesta = fgets($socket, 515);
+            registrarLogEmail("STARTTLS respuesta: " . trim($respuesta));
+
+            if (substr($respuesta, 0, 3) != '220') {
+                registrarLogEmail("Error en STARTTLS: " . trim($respuesta));
+                fclose($socket);
+                return false;
+            }
+
             stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
 
             fputs($socket, "EHLO " . $_SERVER['SERVER_NAME'] . "\r\n");
             $respuesta = fgets($socket, 515);
+            // Leer líneas adicionales
+            while ($respuesta && substr($respuesta, 3, 1) == '-') {
+                $respuesta = fgets($socket, 515);
+            }
         }
 
         // Autenticación
         if (SMTP_AUTH) {
             fputs($socket, "AUTH LOGIN\r\n");
             $respuesta = fgets($socket, 515);
+            registrarLogEmail("AUTH LOGIN respuesta: " . trim($respuesta));
 
             fputs($socket, base64_encode($username) . "\r\n");
             $respuesta = fgets($socket, 515);
+            registrarLogEmail("Usuario respuesta: " . trim($respuesta));
 
             fputs($socket, base64_encode($password) . "\r\n");
             $respuesta = fgets($socket, 515);
+            registrarLogEmail("Password respuesta: " . trim($respuesta));
 
             if (substr($respuesta, 0, 3) != '235') {
                 registrarLogEmail("Error en autenticación SMTP: $respuesta");
@@ -135,14 +165,35 @@ function enviarEmailSMTP($to, $nombre_destinatario, $asunto, $mensaje_html) {
         // MAIL FROM
         fputs($socket, "MAIL FROM: <" . EMAIL_FROM . ">\r\n");
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("MAIL FROM respuesta: " . trim($respuesta));
+
+        if (substr($respuesta, 0, 3) != '250') {
+            registrarLogEmail("Error en MAIL FROM: " . trim($respuesta));
+            fclose($socket);
+            return false;
+        }
 
         // RCPT TO
         fputs($socket, "RCPT TO: <$to>\r\n");
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("RCPT TO respuesta: " . trim($respuesta));
+
+        if (substr($respuesta, 0, 3) != '250') {
+            registrarLogEmail("Error en RCPT TO: " . trim($respuesta));
+            fclose($socket);
+            return false;
+        }
 
         // DATA
         fputs($socket, "DATA\r\n");
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("DATA respuesta: " . trim($respuesta));
+
+        if (substr($respuesta, 0, 3) != '354') {
+            registrarLogEmail("Error en DATA: " . trim($respuesta));
+            fclose($socket);
+            return false;
+        }
 
         // Construir el mensaje
         $mensaje_completo = "From: " . EMAIL_FROM_NAME . " <" . EMAIL_FROM . ">\r\n";
@@ -157,12 +208,21 @@ function enviarEmailSMTP($to, $nombre_destinatario, $asunto, $mensaje_html) {
 
         fputs($socket, $mensaje_completo);
         $respuesta = fgets($socket, 515);
+        registrarLogEmail("Envío final respuesta: " . trim($respuesta));
+
+        // Verificar que el email fue aceptado (250)
+        if (substr($respuesta, 0, 3) != '250') {
+            registrarLogEmail("Error: El servidor no aceptó el email: " . trim($respuesta));
+            fputs($socket, "QUIT\r\n");
+            fclose($socket);
+            return false;
+        }
 
         // QUIT
         fputs($socket, "QUIT\r\n");
         fclose($socket);
 
-        registrarLogEmail("Email SMTP enviado exitosamente a: $to - Asunto: $asunto");
+        registrarLogEmail("Email SMTP enviado y ACEPTADO exitosamente a: $to - Asunto: $asunto");
         return true;
 
     } catch (Exception $e) {
