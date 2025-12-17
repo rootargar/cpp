@@ -303,6 +303,13 @@ $stmtDocumentos = sqlsrv_query($conn, $sqlDocumentos);
                     <p>Ver registro de actividades del sistema</p>
                 </a>
             <?php endif; ?>
+
+            <?php if (esAdministrador()): ?>
+                <a href="procesar_notificaciones.php" class="card">
+                    <h3>📧 Notificaciones por Email</h3>
+                    <p>Procesar y enviar notificaciones pendientes</p>
+                </a>
+            <?php endif; ?>
         </div>
         
         <?php if ($stmtDocumentos && sqlsrv_has_rows($stmtDocumentos)): ?>
