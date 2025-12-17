@@ -431,11 +431,17 @@ function obtenerEmailsPorRol($roles) {
     $sql = "SELECT DISTINCT email
             FROM Usuarios
             WHERE rol_id IN ($placeholders)
-            AND estado = 'Activo'
+            AND estado = 1
             AND email IS NOT NULL
             AND email != ''";
 
     $stmt = sqlsrv_query($conn, $sql, $roles);
+
+    // Verificar si la consulta falló
+    if ($stmt === false) {
+        registrarLogEmail("Error en obtenerEmailsPorRol: " . print_r(sqlsrv_errors(), true));
+        return [];
+    }
 
     $emails = [];
     while ($row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
